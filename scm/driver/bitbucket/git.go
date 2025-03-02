@@ -48,8 +48,26 @@ func (s *gitService) FindRef(ctx context.Context, repo, ref string) (string, *sc
 	return ref, nil, nil
 }
 
+// CreateRef creates a reference based on the sha input. It is based on code from drone/go-scm
 func (s *gitService) CreateRef(ctx context.Context, repo, ref, sha string) (*scm.Reference, *scm.Response, error) {
-	return nil, nil, scm.ErrNotSupported
+	path := fmt.Sprintf("2.0/repositories/%s/refs/branches", repo)
+	in := &branch{Name: ref}
+	in.Target.Hash = sha
+
+	out := &struct {
+		Ref    string `json:"ref"`
+		Object struct {
+			Sha string
+		} `json:"object"`
+	}{}
+
+	res, err := s.client.do(ctx, "POST", path, in, out)
+	scmRef := &scm.Reference{
+		Name: out.Ref,
+		Sha:  out.Object.Sha,
+		Path: out.Ref,
+	}
+	return scmRef, res, err
 }
 
 func (s *gitService) DeleteRef(ctx context.Context, repo, ref string) (*scm.Response, error) {

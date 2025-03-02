@@ -16,6 +16,29 @@ import (
 	"gopkg.in/h2non/gock.v1"
 )
 
+func TestGitCreateRef(t *testing.T) {
+	defer gock.Off()
+
+	gock.New("https://api.bitbucket.org").
+		Post("/2.0/repositories/atlassian/stash-example-plugin/refs/branches").
+		Reply(201).
+		Type("application/json").
+		File("testdata/ref.json")
+
+	client := NewDefault()
+	// Response does not have any content in it
+	_, res, err := client.Git.CreateRef(context.Background(), "atlassian/stash-example-plugin", "yooo", "2e684d13a43afd86cb48ea36d9f40f43e791fae9")
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if res.Status != 201 {
+		t.Errorf("Unexpected Results")
+	}
+}
+
 func TestGitFindCommit(t *testing.T) {
 	defer gock.Off()
 
