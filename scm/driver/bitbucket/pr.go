@@ -254,16 +254,23 @@ type prPatchBranch struct {
 type prInput struct {
 	Title   string        `json:"title,omitempty"`
 	Source  prPatchBranch `json:"source,omitempty"`
+	Destination prPatchBranch `json:"destination,omitempty"`
 	Project string
 }
 
 func (s *pullService) Create(ctx context.Context, repo string, input *scm.PullRequestInput) (*scm.PullRequest, *scm.Response, error) {
 	path := fmt.Sprintf("2.0/repositories/%s/pullrequests", repo)
+	// Add support to create a PR against the Base branch. It is based on code from drone/go-scm
 	in := &prInput{
 		Title: input.Title,
 		Source: prPatchBranch{
 			Branch: prPatchName{
 				Name: input.Head,
+			},
+		},
+		Destination: prPatchBranch{
+			Branch: prPatchName{
+				Name: input.Base,
 			},
 		},
 	}
