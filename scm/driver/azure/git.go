@@ -77,7 +77,8 @@ func (s *gitService) ListBranches(ctx context.Context, repo string, _ *scm.ListO
 		return nil, nil, err
 	}
 
-	endpoint := fmt.Sprintf("%s/%s/_apis/git/repositories/%s/refs?includeMyBranches=true&api-version=6.0", ro.org, ro.project, ro.name)
+	// Use filter for "heads" so that all branches are fetched. "includeMyBranches" only fetches branches owned by the caller
+	endpoint := fmt.Sprintf("%s/%s/_apis/git/repositories/%s/refs?filter=heads/&api-version=6.0", ro.org, ro.project, ro.name)
 	out := new(branchList)
 	res, err := s.client.do(ctx, "GET", endpoint, nil, &out)
 	return convertBranchList(out.Value), res, err
@@ -105,7 +106,19 @@ func (s *gitService) ListCommits(ctx context.Context, repo string, opts scm.Comm
 }
 
 func (s *gitService) ListTags(ctx context.Context, repo string, opts *scm.ListOptions) ([]*scm.Reference, *scm.Response, error) {
-	return nil, nil, scm.ErrNotSupported
+	// https://docs.microsoft.com/en-us/rest/api/azure/devops/git/refs/list?view=azure-devops-rest-6.0
+	ro, err := decodeRepo(repo)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// https://learn.microsoft.com/en-us/rest/api/azure/devops/git/refs/list?view=azure-devops-rest-6.0&tabs=HTTP#refs-tags
+	// Use filter for "tags" to fetch all tags
+	// Set "peelTags" to true so that Commit ID pointed to by Annoted tags are populated in the PeeledObjectId property
+	endpoint := fmt.Sprintf("%s/%s/_apis/git/repositories/%s/refs?filter=tags/&peelTags=True&api-version=6.0", ro.org, ro.project, ro.name)
+	out := new(tagList)
+	res, err := s.client.do(ctx, "GET", endpoint, nil, &out)
+	return convertTagList(out.Value), res, err
 }
 
 func (s *gitService) ListChanges(ctx context.Context, repo, ref string, _ *scm.ListOptions) ([]*scm.Change, *scm.Response, error) {
@@ -169,6 +182,33 @@ type branch struct {
 		Descriptor string `json:"descriptor"`
 	} `json:"creator"`
 	URL string `json:"url"`
+}
+
+// tag is slightly different than branch as it has the PeeledObjectID property
+// This property holds the Commit ID pointed to by an Annotated tag
+type tag struct {
+	Name     string `json:"name"`
+	ObjectID string `json:"objectId"`
+    PeeledObjectID string `json:"peeledObjectId"`
+	Creator  struct {
+		DisplayName string `json:"displayName"`
+		URL         string `json:"url"`
+		Links       struct {
+			Avatar struct {
+				Href string `json:"href"`
+			} `json:"avatar"`
+		} `json:"_links"`
+		ID         string `json:"id"`
+		UniqueName string `json:"uniqueName"`
+		ImageURL   string `json:"imageUrl"`
+		Descriptor string `json:"descriptor"`
+	} `json:"creator"`
+	URL string `json:"url"`
+}
+
+type tagList struct {
+	Value []*tag `json:"value"`
+	Count int       `json:"count"`
 }
 
 type commitList struct {
@@ -251,6 +291,28 @@ func convertBranch(from *branch) *scm.Reference {
 		Name: scm.TrimRef(from.Name),
 		Path: from.Name,
 		Sha:  from.ObjectID,
+	}
+}
+
+func convertTagList(from []*tag) []*scm.Reference {
+	to := []*scm.Reference{}
+	for _, v := range from {
+		to = append(to, convertTag(v))
+	}
+	return to
+}
+
+func convertTag(from *tag) *scm.Reference {
+	// PeeldObjectID property holds the Commit ID pointed to by an Annotated tag
+	// Use this for the SHA reference
+	shaValue := from.ObjectID
+	if len(from.PeeledObjectID) > 0 {
+		shaValue = from.PeeledObjectID
+    }
+	return &scm.Reference{
+		Name: scm.TrimRef(from.Name),
+		Path: from.Name,
+		Sha:  shaValue,
 	}
 }
 
